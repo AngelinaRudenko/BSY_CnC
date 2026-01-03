@@ -138,6 +138,23 @@ def do_very_strange_decryption(encrypted_json: str):
     decoded = base64.b64decode(encoded).decode('utf-8')
     return decoded
 
+def encode_as_timezones(text: str):
+    # convert each character to its corresponding timezone
+    encoded = []
+    for char in text.upper():
+        if char in CHAR_TO_TIMEZONE:
+            encoded.append(CHAR_TO_TIMEZONE[char])
+        else: # char missing in dictionary
+            encoded.append(CHAR_TO_TIMEZONE[', '])
+
+def decode_as_timezones(timezones_encoded_msg):
+    # convert list of timezones back to characters
+    decoded = []
+    for tz in timezones_encoded_msg:
+        if tz.upper() in TIMEZONE_TO_CHAR:
+            decoded.append(TIMEZONE_TO_CHAR[tz.upper()])
+    return ''.join(decoded)
+
 ################################### COMMON CODE ENDS HERE ###################################
 
 
@@ -184,8 +201,7 @@ def decode_response(payload: str):
 
         elif MSG_FIELD_TIMEZONES in data:
             # if field present, every timezone in list is mapped to character A-Z
-            for tz in data[MSG_FIELD_TIMEZONES]:
-                message += TIMEZONE_TO_CHAR[tz.upper()]
+            message += decode_as_timezones(data[MSG_FIELD_TIMEZONES])
 
         result["bot_id"] = bot_id
         result["message"] = message
