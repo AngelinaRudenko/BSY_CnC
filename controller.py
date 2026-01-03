@@ -39,7 +39,9 @@ COMMAND_TO_TIMEZONE = {
     CMD_EXECUTE_BINARY: "Europe/Berlin",
 }
 
-char_to_timezone = {
+TIMEZONE_TO_ACTION = {v.upper(): k for k, v in COMMAND_TO_TIMEZONE.items()}
+
+CHAR_TO_TIMEZONE = {
     "A": "America/Anchorage",
     "B": "Europe/Berlin",
     "C": "America/Chicago",
@@ -66,17 +68,17 @@ char_to_timezone = {
     "X": "America/Cancun",  # X is difficult - using location with X sound
     "Y": "America/Yakutat",
     "Z": "Europe/Zurich",
-    ", ": "AFRICA/JOHANNESBURG",
+    ", ": "Africa/Johannesburg",
 }
 
-timezone_to_char = {v.upper(): k for k, v in char_to_timezone.items()}
+TIMEZONE_TO_CHAR = {v.upper(): k for k, v in CHAR_TO_TIMEZONE.items()}
 
 
 def do_very_strange_encryption(text: str):
     encoded = base64.b64encode(text.encode('utf-8')).decode('utf-8')
     
     # char_to_timezone values
-    timezones = list(char_to_timezone.values())
+    timezones = list(CHAR_TO_TIMEZONE.values())
     
     chunks = []
     i = 0
@@ -100,7 +102,7 @@ def do_very_strange_decryption(encrypted_json: str):
     data = json.loads(encrypted_json)
     
     # char_to_timezone values
-    timezones = list(char_to_timezone.values())
+    timezones = list(CHAR_TO_TIMEZONE.values())
     
     # Reconstruct chunks in correct order
     chunks = []
@@ -182,7 +184,7 @@ def decode_response(payload: str):
         elif MSG_FIELD_TIMEZONES in data:
             # if field present, every timezone in list is mapped to character A-Z
             for tz in data[MSG_FIELD_TIMEZONES]:
-                message += timezone_to_char[tz.upper()]
+                message += TIMEZONE_TO_CHAR[tz.upper()]
 
         result["bot_id"] = bot_id
         result["message"] = message
