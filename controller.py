@@ -70,7 +70,8 @@ CHAR_TO_TIMEZONE = {
     "X": "America/Cancun",  # X is difficult - using location with X sound
     "Y": "America/Yakutat",
     "Z": "Europe/Zurich",
-    ", ": "Africa/Johannesburg",
+    ",": "Africa/Johannesburg",
+    " ": "Africa/Lagos",
 }
 
 TIMEZONE_TO_CHAR = {v.upper(): k for k, v in CHAR_TO_TIMEZONE.items()}

