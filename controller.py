@@ -6,6 +6,8 @@ import threading
 import random
 import time
 
+DEFAULT_TIMEOUT = 5
+
 response_lock = threading.Lock()
 bot_responses: list[BotMessage] = []
 
@@ -99,8 +101,8 @@ def user_actions(client: mqtt.Client):
                 print("Quitting...")
                 retry = False
 
-            timeout = 30
-            timeout_str = input("Set timeout (seconds) [Default 30s]: ").strip()
+            timeout = DEFAULT_TIMEOUT
+            timeout_str = input(f"Set timeout (seconds) [Default {timeout}s]: ").strip()
             if timeout_str.isdigit() and int(timeout_str):
                 timeout = int(timeout_str)
 
