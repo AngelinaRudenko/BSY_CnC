@@ -10,6 +10,7 @@ DEFAULT_TIMEOUT = 5
 
 response_lock = threading.Lock()
 bot_responses: list[BotMessage] = []
+connected_event = threading.Event()
 
 def on_connect(client, userdata, flags, reason_code, properties):
     # reason_code - connection result code. 0 - success, otherwise failure.
@@ -17,6 +18,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
         print("Connected to MQTT Broker.")
         client.subscribe(MQTT_TOPIC)
         print(f"Subscribed to topic: {MQTT_TOPIC}.")
+        connected_event.set()
     else:
         print(f"Failed to connect, connection return code {reason_code}.")
         client.disconnect()
@@ -133,6 +135,12 @@ def main():
 
     try:
         client.loop_start()
+
+        # Wait until connected (with 30 second timeout)
+        if not connected_event.wait(timeout=30):
+            print(f"Failed to connect to MQTT broker within timeout period.")
+            return
+
         user_actions(client)
     except Exception as ex:
         print(f"An error occurred: {ex}")
