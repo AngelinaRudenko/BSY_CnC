@@ -28,10 +28,11 @@ def on_message(client, userdata, msg):
 
         try:
             data = BotMessage.from_request(request_msg)
-            print(f"Deserialized payload: {request_msg}")
+            print(f"Deserialized payload: {data}")
             with response_lock:
                 bot_responses.append(data)
         except Exception:
+            print(f"Deserialized payload: {request_msg}")
             raise UnknownDeviceError()
 
     except UnknownDeviceError:

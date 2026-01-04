@@ -88,7 +88,7 @@ class RequestMessage:
         try:
             data = json.loads(json_str)
             return cls(**data)
-        except UnicodeDecodeError:
+        except Exception:
             # if we can't deserialize - means different contract
             raise UnknownDeviceError()
     
