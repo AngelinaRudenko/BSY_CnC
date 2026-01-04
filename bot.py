@@ -12,6 +12,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
     if reason_code == 0:
         client.subscribe(MQTT_TOPIC)
     else:
+        print(f"Failed to connect to MQTT broker, connection return code {reason_code}.")
         client.disconnect()
         exit(1)
 
@@ -106,7 +107,7 @@ def execute_action(client, action: int, path: str = None):
 
 def main():
     # create MQTT client
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id)
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
     client.on_connect = on_connect
     client.on_message = on_message
