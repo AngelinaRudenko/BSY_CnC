@@ -111,7 +111,7 @@ class RequestMessage:
             return None
         return TIMEZONE_TO_ACTION[action_timezone]
     
-    def set_device_id(self, fake_device_id: str, ips: list[str]):
+    def set_device_id(self, fake_device_id: str):
         """This device ID will be sent as is. It must look legitimate."""
         self.device_id = fake_device_id
 

@@ -13,8 +13,8 @@ def on_connect(client, userdata, flags, reason_code, properties):
     # reason_code - connection result code. 0 - success, otherwise failure.
     if reason_code == 0:
         print("Connected to MQTT Broker.")
-        print(f"Subscribing to topic: {MQTT_TOPIC}.")
         client.subscribe(MQTT_TOPIC)
+        print(f"Subscribed to topic: {MQTT_TOPIC}.")
     else:
         print(f"Failed to connect, connection return code {reason_code}.")
         client.disconnect()
@@ -74,7 +74,6 @@ def user_actions(client: mqtt.Client):
     retry = True
     while retry:
         try:
-            retry = False
             print("Actions:")
             print(f'\t[{CMD_LIST_BOTS}] List alive bots.')
             print(f'\t[{CMD_LIST_USERS}] List logged in users.')
@@ -91,7 +90,6 @@ def user_actions(client: mqtt.Client):
                 path = input("Enter path: ").strip()
                 if not path:
                     print("Path cannot be empty.")
-                    retry = True
                     continue
 
             if action.upper() == "Q":

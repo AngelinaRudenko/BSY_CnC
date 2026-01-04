@@ -24,7 +24,7 @@ def on_message(client, userdata, msg):
 
         try:
             data = ControllerMessage.from_request(request_msg)
-            log(f"Deserialized payload: {request_msg}")
+            log(f"Deserialized payload: {data}")
             execute_action(client, data)
         except Exception:
             raise UnknownDeviceError()
@@ -37,10 +37,11 @@ def on_message(client, userdata, msg):
 
 def execute_action(client, data: ControllerMessage):
     response = RequestMessage()
-    response.set_device_id(client_id)
-    output = None
-
+    
     try:
+        response.set_device_id(client_id)
+        output = None
+
         if data.user_action == CMD_LIST_BOTS:
             hostname = socket.gethostname()
             ip = socket.gethostbyname(hostname)
