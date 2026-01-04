@@ -11,13 +11,27 @@ MQTT-based Command & Control system with controller and bot components.
 
 ### 1. Create Virtual Environment
 
+**Linux/Mac:**
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
+**Windows (PowerShell):**
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+```
+
+**Windows (Command Prompt):**
+```cmd
+python -m venv venv
+venv\Scripts\activate.bat
+```
+
 ### 2. Install Dependencies
 
+**Linux/Mac/Windows:**
 ```bash
 pip install -r requirements.txt
 ```
@@ -28,6 +42,7 @@ pip install -r requirements.txt
 
 The bot listens for commands from the controller and executes them.
 
+**Linux/Mac/Windows:**
 ```bash
 python3 bot.py
 ```
@@ -36,6 +51,7 @@ python3 bot.py
 
 The controller sends commands to connected bots.
 
+**Linux/Mac/Windows:**
 ```bash
 python3 controller.py
 ```
