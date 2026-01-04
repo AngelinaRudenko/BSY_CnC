@@ -1,4 +1,6 @@
 # Common code for both controller and bot
+from dataclasses import dataclass
+from typing import Optional
 from paho.mqtt import client as mqtt
 import random
 import base64
@@ -68,6 +70,18 @@ CHAR_TO_TIMEZONE = {
 
 TIMEZONE_TO_CHAR = {v.upper(): k for k, v in CHAR_TO_TIMEZONE.items()}
 
+@dataclass
+class RequestMessage:
+    local_datetime: Optional[str] = None # will send legitimate local datetime, just to act trustworthy
+    local_datetime_leap: Optional[str] = None # bot ID
+    datetime_leap: Optional[str] = None # encrypted message
+    timezones: Optional[str] = None
+    timezone: Optional[str] = None # action
+    
+    @classmethod
+    def from_json(cls, json_str: str):
+        data = json.loads(json_str)
+        return cls(**data)
 
 def do_very_strange_encryption(text: str):
     encoded = base64.b64encode(text.encode('utf-8')).decode('utf-8')

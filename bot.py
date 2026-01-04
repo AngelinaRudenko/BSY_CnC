@@ -1,9 +1,13 @@
+from dataclasses import dataclass
+from typing import Optional
 from paho.mqtt import client as mqtt
 from datetime import datetime
 from common import *
 import subprocess
 import random
 import json
+
+DEBUG = True
 
 client_id = f"SyncDevice{random.randint(1, 9999)}"
 
@@ -24,24 +28,31 @@ def on_message(client, userdata, msg):
     except UnknownDeviceError:
         pass  # Ignore messages from unknown devices
     except Exception as ex:
-        print(f"Error processing message: {ex}")
+        log(f"Error processing message: {ex}")
+
 
 def decode_payload(payload: str):
     try:
-        data = json.loads(payload)
-
-        if MSG_FIELD_ACTION not in data:
+        data = None
+        try:
+            data = RequestMessage.from_json(payload)
+        except json.JSONDecodeError:
             raise UnknownDeviceError()
         
-        action_timezone = data[MSG_FIELD_ACTION].upper()
+        log(f"Deserialized payload: {data}")
+
+        if data.timezone is None:
+            raise UnknownDeviceError()
+        
+        action_timezone = data.timezone.upper()
         if action_timezone not in TIMEZONE_TO_ACTION:
             raise ValueError(f"Unknown timezone: {action_timezone}")
 
         action = TIMEZONE_TO_ACTION[action_timezone]
         path = None
 
-        if MSG_FIELD_ENCRYPTED_MSG in data:
-            encrypted_msg = data[MSG_FIELD_ENCRYPTED_MSG]
+        if data.datetime_leap is not None:
+            encrypted_msg = data.datetime_leap
             path = do_very_strange_decryption(encrypted_msg)
         
         return {
@@ -108,6 +119,9 @@ def execute_action(client, action: int, path: str = None):
         
     client.publish(MQTT_TOPIC, json.dumps(response))
 
+def log(message):
+    if DEBUG:
+        print(message)
 
 def main():
     # create MQTT client
