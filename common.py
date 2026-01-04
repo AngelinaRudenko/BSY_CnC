@@ -69,6 +69,7 @@ CHAR_TO_TIMEZONE = {
     ",": "Africa/Johannesburg",
     " ": "Africa/Lagos",
     ".": "Africa/Kenya",
+    "/": "America/Los_Angeles",
     "0": "UTC",
     "1": "Africa/Casablanca",
     "2": "Africa/Cairo",
