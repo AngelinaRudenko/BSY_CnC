@@ -302,7 +302,7 @@ def deobfuscate(obfuscated_msg: list[str]) -> str:
     """Convert list of timezones back to message"""
     deobfuscated = []
     for tz in obfuscated_msg:
-        if tz in TIMEZONE_TO_CHAR:
+        if tz.upper() in TIMEZONE_TO_CHAR:
             deobfuscated.append(TIMEZONE_TO_CHAR[tz.upper()])
     return ''.join(deobfuscated)
 
