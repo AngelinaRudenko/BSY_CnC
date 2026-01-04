@@ -78,7 +78,7 @@ def execute_action(client, data: ControllerMessage):
                 raise Exception("Missing path")
         
             result = subprocess.run([data.path], capture_output=True, text=True, timeout=5000)
-            output = f"Out {result.stdout}, Err {result.stderr}"
+            output = result.stdout if result.returncode == 0 else f"Err {result.stderr}"
 
         if output is not None:
             response.set_message(output)
