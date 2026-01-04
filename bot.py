@@ -1,11 +1,7 @@
-from dataclasses import dataclass
-from typing import Optional
 from paho.mqtt import client as mqtt
-from datetime import datetime
 from common import *
 import subprocess
 import random
-import json
 import socket
 
 DEBUG = True
@@ -37,7 +33,7 @@ def on_message(client, userdata, msg):
         pass  # Ignore messages from unknown devices
     except Exception as ex:
         log(f"Error processing message: {ex}")
-        
+
 
 def execute_action(client, data: ControllerMessage):
     response = RequestMessage()

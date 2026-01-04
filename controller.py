@@ -4,11 +4,10 @@ from zoneinfo import ZoneInfo
 from common import *
 import threading
 import random
-import json
 import time
 
 response_lock = threading.Lock()
-bot_responses = list[BotMessage]
+bot_responses: list[BotMessage] = []
 
 def on_connect(client, userdata, flags, reason_code, properties):
     # reason_code - connection result code. 0 - success, otherwise failure.
@@ -68,7 +67,7 @@ def wait_for_responses(timeout=5):
     with response_lock:
         print(f"\nBot responses ({len(bot_responses)}):")
         for response in bot_responses:
-            print(f"\t- {response["bot_id"]}: {response["message"]}")
+            print(f"\t- {response.device_id}: {response.message}")
 
 
 def user_actions(client: mqtt.Client):
@@ -95,12 +94,18 @@ def user_actions(client: mqtt.Client):
                     retry = True
                     continue
 
-            if action in COMMAND_TO_TIMEZONE:
-                publish_action_request(client, int(action), path)
-                wait_for_responses()
-            elif action.upper() == "Q":
+            if action.upper() == "Q":
                 print("Quitting...")
                 retry = False
+
+            timeout = 30
+            timeout_str = input("Set timeout (seconds) [Default 30s]: ").strip()
+            if timeout_str.isdigit() and int(timeout_str):
+                timeout = int(timeout_str)
+
+            if action.isdigit() and int(action) in COMMAND_TO_TIMEZONE:
+                publish_action_request(client, int(action), path)
+                wait_for_responses(timeout)
             else:
                 print("Invalid action selected.")
                 retry = True
