@@ -30,6 +30,8 @@ def on_message(client, userdata, msg):
         with response_lock:
             bot_responses.append(data)
 
+    except UnknownDeviceError:
+        pass  # Ignore messages from unknown devices
     except Exception as ex:
         print(f"Failed to handle message: {ex}")
 
@@ -55,11 +57,16 @@ def decode_response(payload: str):
             # if field present, every timezone in list is mapped to character A-Z
             message += decode_as_timezones(data[MSG_FIELD_TIMEZONES])
 
+        if not message and not bot_id:
+            raise UnknownDeviceError
+
         result["bot_id"] = bot_id
         result["message"] = message
         return result
+    except UnknownDeviceError as ude:
+        raise ude
     except Exception:
-        raise Exception("Invalid payload.")
+        raise Exception(f"Invalid payload {payload}.")
 
 
 def timezone_date_time(timezone: str):

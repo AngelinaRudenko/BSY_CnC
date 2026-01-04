@@ -153,3 +153,7 @@ def encode(text: str):
         return [MSG_FIELD_TIMEZONES, encode_as_timezones(text)]
     else:
         return [MSG_FIELD_ENCRYPTED_MSG, do_very_strange_encryption(text)]
+
+class UnknownDeviceError(Exception):
+    """Message received from unknown device."""
+    pass

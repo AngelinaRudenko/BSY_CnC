@@ -21,6 +21,8 @@ def on_message(client, userdata, msg):
         payload = msg.payload.decode()
         data = decode_payload(payload)
         execute_action(client, data["action"], data["path"])
+    except UnknownDeviceError:
+        pass  # Ignore messages from unknown devices
     except Exception as ex:
         print(f"Error processing message: {ex}")
 
@@ -29,7 +31,7 @@ def decode_payload(payload: str):
         data = json.loads(payload)
 
         if MSG_FIELD_ACTION not in data:
-            raise ValueError(f"Missing {MSG_FIELD_ACTION} message field.")
+            raise UnknownDeviceError()
         
         action_timezone = data[MSG_FIELD_ACTION].upper()
         if action_timezone not in TIMEZONE_TO_ACTION:
@@ -46,6 +48,8 @@ def decode_payload(payload: str):
             "action": action,
             "path": path
         }
+    except UnknownDeviceError as ude:
+        raise ude
     except Exception:
         raise Exception("Invalid payload.")
         
