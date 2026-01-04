@@ -20,7 +20,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
 def on_message(client, userdata, msg):
     try:
         payload = msg.payload.decode()
-        request_msg = decode_payload(payload)
+        request_msg = RequestMessage.from_json(payload)
 
         try:
             data = ControllerMessage.from_request(request_msg)
@@ -28,7 +28,9 @@ def on_message(client, userdata, msg):
             execute_action(client, data)
         except Exception:
             raise UnknownDeviceError()
-        
+    
+    except UnicodeDecodeError:
+        pass  # Ignore messages from unknown devices
     except UnknownDeviceError:
         pass  # Ignore messages from unknown devices
     except Exception as ex:

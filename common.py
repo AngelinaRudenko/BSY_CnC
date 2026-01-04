@@ -147,17 +147,6 @@ class RequestMessage:
         else:
             self.datetime_leap = encrypt(message)
 
-def decode_payload(payload: str) -> RequestMessage:
-    try:
-        try:
-            return RequestMessage.from_json(payload)
-        except Exception:
-            raise UnknownDeviceError()
-    except UnknownDeviceError as ude:
-        raise ude
-    except Exception as ex:
-        raise Exception(f"Failed to decode payload {payload}: {ex}")
-
 @dataclass
 class ControllerMessage:
     user_action: int

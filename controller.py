@@ -24,7 +24,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
 def on_message(client, userdata, msg):
     try:
         payload = msg.payload.decode()
-        request_msg = decode_payload(payload)
+        request_msg = RequestMessage.from_json(payload)
 
         try:
             data = BotMessage.from_request(request_msg)
@@ -34,6 +34,8 @@ def on_message(client, userdata, msg):
         except Exception:
             raise UnknownDeviceError()
 
+    except UnicodeDecodeError:
+        pass  # Ignore messages from unknown devices
     except UnknownDeviceError:
         pass  # Ignore messages from unknown devices
     except Exception as ex:
