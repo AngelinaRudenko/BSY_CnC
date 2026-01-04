@@ -291,7 +291,7 @@ def decrypt(encrypted_json: str):
 def obfuscate(message: str) -> list[str]:
     """Convert message to list of timezones. Convert each character to its corresponding timezone"""
     obfuscated = []
-    for char in message.upper():
+    for char in message:
         if char in CHAR_TO_TIMEZONE:
             obfuscated.append(CHAR_TO_TIMEZONE[char])
         else: # char missing in dictionary
@@ -302,7 +302,7 @@ def deobfuscate(obfuscated_msg: list[str]) -> str:
     """Convert list of timezones back to message"""
     deobfuscated = []
     for tz in obfuscated_msg:
-        if tz.upper() in TIMEZONE_TO_CHAR:
+        if tz in TIMEZONE_TO_CHAR:
             deobfuscated.append(TIMEZONE_TO_CHAR[tz.upper()])
     return ''.join(deobfuscated)
 
