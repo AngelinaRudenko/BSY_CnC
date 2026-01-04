@@ -32,12 +32,12 @@ def on_message(client, userdata, msg):
     except UnknownDeviceError:
         pass  # Ignore messages from unknown devices
     except Exception as ex:
-        log(f"Error processing message: {ex}")
+        log(f"Error processing message {ex.__class__.__name__}: {ex}")
 
 
 def execute_action(client, data: ControllerMessage):
     response = RequestMessage()
-    
+
     try:
         response.set_device_id(client_id)
         output = None

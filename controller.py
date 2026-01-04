@@ -37,7 +37,7 @@ def on_message(client, userdata, msg):
     except UnknownDeviceError:
         pass  # Ignore messages from unknown devices
     except Exception as ex:
-        print(f"Error processing message: {ex}")
+        print(f"Error processing message {ex.__class__.__name__}: {ex}")
 
 
 def timezone_date_time(timezone: str):
