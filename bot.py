@@ -7,9 +7,9 @@ import json
 
 client_id = f"SyncDevice{random.randint(1, 9999)}"
 
-def on_connect(client, userdata, flags, rc):
-    # rc - connection result code. 0 - success, otherwise failure.
-    if rc == 0:
+def on_connect(client, userdata, flags, reason_code, properties):
+    # reason_code - connection result code. 0 - success, otherwise failure.
+    if reason_code == 0:
         client.subscribe(MQTT_TOPIC)
     else:
         client.disconnect()
@@ -106,7 +106,7 @@ def execute_action(client, action: int, path: str = None):
 
 def main():
     # create MQTT client
-    client = mqtt.Client(client_id)
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id)
 
     client.on_connect = on_connect
     client.on_message = on_message

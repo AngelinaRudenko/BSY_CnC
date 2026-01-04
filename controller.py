@@ -10,14 +10,14 @@ import time
 response_lock = threading.Lock()
 bot_responses = []
 
-def on_connect(client, userdata, flags, rc):
-    # rc - connection result code. 0 - success, otherwise failure.
-    if rc == 0:
+def on_connect(client, userdata, flags, reason_code, properties):
+    # reason_code - connection result code. 0 - success, otherwise failure.
+    if reason_code == 0:
         print("Connected to MQTT Broker.")
         print(f"Subscribing to topic: {MQTT_TOPIC}.")
         client.subscribe(MQTT_TOPIC)
     else:
-        print(f"Failed to connect, connection return code {rc}.")
+        print(f"Failed to connect, connection return code {reason_code}.")
         client.disconnect()
         exit(1)
 
@@ -147,7 +147,7 @@ def user_actions(client: mqtt.Client):
 def main():
     # create MQTT client
     client_id = f"Controller{random.randint(1, 10000)}"
-    client = mqtt.Client(client_id)
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id)
 
     client.on_connect = on_connect
     client.on_message = on_message
