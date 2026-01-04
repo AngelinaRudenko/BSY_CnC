@@ -29,6 +29,8 @@ def on_message(client, userdata, msg):
         except Exception:
             raise UnknownDeviceError()
     
+    except UnicodeDecodeError:
+        pass  # Ignore messages from unknown devices
     except UnknownDeviceError:
         pass  # Ignore messages from unknown devices
     except Exception as ex:

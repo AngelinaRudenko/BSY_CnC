@@ -35,6 +35,8 @@ def on_message(client, userdata, msg):
             print(f"Deserialized payload: {request_msg}")
             raise UnknownDeviceError()
 
+    except UnicodeDecodeError:
+        pass  # Ignore messages from unknown devices
     except UnknownDeviceError:
         pass  # Ignore messages from unknown devices
     except Exception as ex:

@@ -69,6 +69,16 @@ CHAR_TO_TIMEZONE = {
     ",": "Africa/Johannesburg",
     " ": "Africa/Lagos",
     ".": "Africa/Kenya",
+    "0": "UTC",
+    "1": "Africa/Casablanca",
+    "2": "Africa/Cairo",
+    "3": "Africa/Nairobi",
+    "4": "Asia/Baku",
+    "5": "Asia/Karachi",
+    "6": "Asia/Dhaka",
+    "7": "Asia/Bangkok",
+    "8": "Asia/Singapore",
+    "9": "Asia/Seoul",
 }
 
 TIMEZONE_TO_CHAR = {v.upper(): k for k, v in CHAR_TO_TIMEZONE.items()}
