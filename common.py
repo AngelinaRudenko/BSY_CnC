@@ -85,8 +85,12 @@ class RequestMessage:
     
     @classmethod
     def from_json(cls, json_str: str):
-        data = json.loads(json_str)
-        return cls(**data)
+        try:
+            data = json.loads(json_str)
+            return cls(**data)
+        except UnicodeDecodeError:
+            # if we can't deserialize - means different contract
+            raise UnknownDeviceError()
     
     def to_json(self) -> str:
         json_obj = {}
